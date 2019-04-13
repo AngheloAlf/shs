@@ -41,7 +41,7 @@ int main(int argc, char **argv){
     }
 
     while(true){
-        printf("Waiting connections...\n");
+        printf("Waiting connections...\n\n");
 
         ALF_socket *client = ALF_sockets_accept(server);
         if(client == NULL){

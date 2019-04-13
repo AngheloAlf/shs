@@ -1,10 +1,49 @@
 #include "packet_parser.h"
 
+#include <stdio.h>
 #include <string.h>
 
 
 #include "util.h"
 
+
+
+bool send_response_packet(ALF_socket *client, Request *req){
+    ssize_t chars_send;
+    char date[msgSize + 1];
+    char msg[msgSize + 1];
+    char *res_header = "HTTP/1.1 200 OK\r\nDate: %s\r\nServer: shs 1.0\r\nContent-Type: text/html;charset=UTF-8\r\n";
+    getHttpDate(date, msgSize);
+
+    sprintf(msg, res_header, date);
+    chars_send = ALF_sockets_send(client, msg, 0, NULL);
+    if(chars_send < 0){
+        printf("%s\n", ALF_sockets_getLastErrorMsg());
+        return false;
+    }
+    
+    if(req->request->req_type == HEAD){
+        chars_send = ALF_sockets_send(client, "\r\n", 0, NULL);
+        if(chars_send < 0){
+            printf("%s\n", ALF_sockets_getLastErrorMsg());
+            return false;
+        }
+    }
+    else if(req->request->req_type == GET){
+        // Content-Length: %i\r\n\r\n%s\r\n", 13, "Hello, World!"
+        sprintf(msg, "Content-Length: %i\r\n\r\n%s\r\n", 13, "Hello, World!");
+        chars_send = ALF_sockets_send(client, msg, 0, NULL);
+        if(chars_send < 0){
+            printf("%s\n", ALF_sockets_getLastErrorMsg());
+            return false;
+        }
+    }
+    else{
+        printf("how?\n");
+        return false;
+    }
+    return true;
+}
 
 bool parse_req_line(ReqLine *dst_req, const char *src_line){
     char **splitted = ALF_STR_split(src_line, " ");
@@ -47,24 +86,9 @@ bool parse_req_line(ReqLine *dst_req, const char *src_line){
     return true;
 }
 
-bool send_response_packet(ALF_socket *client){
-    char msg[msgSize + 1];
-    char date[msgSize + 1];
-
-    getHttpDate(date, msgSize);
-    sprintf(msg, "HTTP/1.1 200 OK\nDate: %s\r\nServer: shs 1.0\r\nContent-Type: text/html;charset=UTF-8\r\nContent-Length: %i\r\n\r\n%s\r\n", date, 13, "Hello, World!");
-    // printf("send>> %s\n", msg);
-    ssize_t asd = ALF_sockets_send(client, msg, 0, NULL);
-    if(asd < 0){
-        printf("%s\n", ALF_sockets_getLastErrorMsg());
-        return false;
-    }
-    return true;
-}
-
 bool parse_request_packet(ALF_socket *client, char *msg_packet){
-    // printf("recv<< %s\n", msg_packet);
     char **msg_arr = ALF_STR_split(msg_packet, "\r\n");
+
     ReqLine req_line;
     bool valid = parse_req_line(&req_line, msg_arr[0]);
     if(!valid){
@@ -72,15 +96,34 @@ bool parse_request_packet(ALF_socket *client, char *msg_packet){
         ALF_STR_freeSplitted(msg_arr);
         return valid;
     }
+
+    printf("%s\n", msg_arr[0]);
+
+    StringDict *headers = StringDict_init();
     char *req_par = msg_arr[1];
     long i;
     for(i = 1; req_par != NULL; req_par = msg_arr[++i]){
         if(strcmp(req_par, "") == 0){
             break;
         }
-        printf("recv << %s\n", req_par);
+        char **header_pair = ALF_STR_split(req_par, ": ");
+        if(header_pair[0] == NULL || header_pair[1] == NULL){
+            // Error ?
+            printf("Error\n");
+            printf("recv << %s\n", req_par);
+            continue;
+        }
+        StringDict_add(headers, strdup(header_pair[0]), strdup(header_pair[1]));
+        // printf("recv << %s\n", req_par);
     }
-    valid = send_response_packet(client);
+
+    Request req;
+    req.request = &req_line;
+    req.req_args = headers;
+
+    valid = send_response_packet(client, &req);
+
+    StringDict_free(headers);
     ALF_STR_freeSplitted(msg_arr);
     return valid;
 }

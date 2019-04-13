@@ -3,6 +3,9 @@
 
 #include <stdbool.h>
 #include "ALF_std.h"
+#include "cadts_hashtable.h"
+
+#include "util.h"
 
 #define msgSize 1024
 
@@ -25,9 +28,16 @@ typedef struct{
     long http_ver_minor;
 } ReqLine;
 
-bool parse_req_line(ReqLine *dst_req, const char *src_line);
+CADTS_HASHTABLE(StringDict, char *, char *, strcmp(A, B), string_hash(A))
 
-bool send_response_packet(ALF_socket *client);
+typedef struct{
+    ReqLine *request;
+    StringDict *req_args;
+} Request;
+
+bool send_response_packet(ALF_socket *client, Request *req);
+
+bool parse_req_line(ReqLine *dst_req, const char *src_line);
 
 bool parse_request_packet(ALF_socket *client, char *msg_packet);
 
