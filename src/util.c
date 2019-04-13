@@ -1,6 +1,7 @@
 #include "util.h"
 
 #include <string.h>
+#include <ctype.h>
 #include <time.h>
 
 void getHttpDate(char *dst_http_date, size_t maxsize){
@@ -16,4 +17,14 @@ unsigned int string_hash(char *string){
         hash = hash*31 + string[i];
     }
     return hash;
+}
+
+int strcicmp(const char *a, const char *b){
+    for(; *a && *b; a++, b++){
+        int d = tolower((unsigned char)*a) - tolower((unsigned char)*b);
+        if (d != 0){
+            return d;
+        }
+    }
+    return 0;
 }

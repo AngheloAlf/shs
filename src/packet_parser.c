@@ -102,6 +102,7 @@ bool parse_request_packet(ALF_socket *client, char *msg_packet){
     StringDict *headers = StringDict_init();
     char *req_par = msg_arr[1];
     long i;
+    bool keep_alive = true;
     for(i = 1; req_par != NULL; req_par = msg_arr[++i]){
         if(strcmp(req_par, "") == 0){
             break;
@@ -113,15 +114,26 @@ bool parse_request_packet(ALF_socket *client, char *msg_packet){
             printf("recv << %s\n", req_par);
             continue;
         }
+        if(strcicmp(header_pair[0], "Connection") == 0){
+            if(strcicmp(header_pair[1], "close") == 0){
+                keep_alive = false;
+            }
+            else if(strcicmp(header_pair[1], "keep-alive") == 0){
+                keep_alive = true;
+            }
+        }
         StringDict_add(headers, strdup(header_pair[0]), strdup(header_pair[1]));
         // printf("recv << %s\n", req_par);
     }
+    printf("\n");
+
+    // printf("%s\n", msg_packet);
 
     Request req;
     req.request = &req_line;
     req.req_args = headers;
 
-    valid = send_response_packet(client, &req);
+    valid = keep_alive && send_response_packet(client, &req);
 
     StringDict_free(headers);
     ALF_STR_freeSplitted(msg_arr);
