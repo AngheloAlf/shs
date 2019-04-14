@@ -60,6 +60,7 @@ bool parse_req_line(ReqLine *dst_req, const char *src_line){
         dst_req->req_type = HEAD;
     }
     else{
+        fprintf(stderr, "> Warning. The method '%s' is not implemented (yet?). Defaulting to 'GET'.\n", method);
         dst_req->req_type = GET;
     }
 
@@ -90,14 +91,13 @@ bool parse_request_packet(ALF_socket *client, char *msg_packet){
     char **msg_arr = ALF_STR_split(msg_packet, "\r\n");
 
     ReqLine req_line;
+    printf("%s\n", msg_arr[0]);
     bool valid = parse_req_line(&req_line, msg_arr[0]);
     if(!valid){
         printf("not valid\n");
         ALF_STR_freeSplitted(msg_arr);
         return valid;
     }
-
-    printf("%s\n", msg_arr[0]);
 
     StringDict *headers = StringDict_init();
     char *req_par = msg_arr[1];
@@ -123,6 +123,7 @@ bool parse_request_packet(ALF_socket *client, char *msg_packet){
             }
         }
         StringDict_add(headers, strdup(header_pair[0]), strdup(header_pair[1]));
+        ALF_STR_freeSplitted(header_pair);
         // printf("recv << %s\n", req_par);
     }
     printf("\n");
@@ -134,6 +135,13 @@ bool parse_request_packet(ALF_socket *client, char *msg_packet){
     req.req_args = headers;
 
     valid = keep_alive && send_response_packet(client, &req);
+
+    free(req_line.route);
+    for(StringDict_iter it=StringDict_begin(headers); !StringDict_iter_done(&it); StringDict_iter_next(&it)){
+        // printf("KEY '%llu' VAL '%c'\n",StringDict_iter_key(&it),StringDict_iter_val(&it));
+        free(StringDict_iter_key(&it));
+        free(StringDict_iter_val(&it));
+    }
 
     StringDict_free(headers);
     ALF_STR_freeSplitted(msg_arr);
