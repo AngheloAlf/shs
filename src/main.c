@@ -1,12 +1,19 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdbool.h>
+#include <signal.h>
 
 #include "ALF_std.h"
 
 #include "packet_parser.h"
 #include "util.h"
 
+// https://stackoverflow.com/a/4217052/6292472
+static volatile bool shs_running = true;
+void intHandler(int _sig_){
+    fprintf(stderr, "\nCatched signal %i\n", _sig_);
+    shs_running = false;
+}
 
 ALF_socket *init_server(const char *ip_addr, uint16_t port){
     ALF_socket *server = ALF_sockets_init(ALF_SOCKETS_TYPE_TCP, ip_addr, port);
@@ -33,7 +40,7 @@ ALF_socket *init_server(const char *ip_addr, uint16_t port){
 ssize_t recv_request_packet(ALF_socket *client, char **dst_msg, size_t *msg_size){
     ssize_t total_readed = 0;
     ssize_t bytes_readed = ALF_sockets_recv(client, *dst_msg, *msg_size, NULL);
-    if(bytes_readed < 0){
+    if(bytes_readed <= 0){
         return bytes_readed;
     }
     total_readed += bytes_readed;
@@ -44,8 +51,11 @@ ssize_t recv_request_packet(ALF_socket *client, char **dst_msg, size_t *msg_size
     while(!msg_ready){
         if(wea == NULL){
             *dst_msg = realloc(*dst_msg, sizeof(char)*((*msg_size)*2+1));
+            if(*dst_msg == NULL){
+                return -1;
+            }
             bytes_readed = ALF_sockets_recv(client, &(*dst_msg)[*msg_size], *msg_size, NULL);
-            if(bytes_readed < 0){
+            if(bytes_readed <= 0){
                 return bytes_readed;
             }
             total_readed += bytes_readed;
@@ -64,8 +74,11 @@ ssize_t recv_request_packet(ALF_socket *client, char **dst_msg, size_t *msg_size
                 }
                 else{
                     *dst_msg = realloc(*dst_msg, sizeof(char)*((*msg_size)*2+1));
+                    if(*dst_msg == NULL){
+                        return -1;
+                    }
                     bytes_readed = ALF_sockets_recv(client, &(*dst_msg)[*msg_size], *msg_size, NULL);
-                    if(bytes_readed < 0){
+                    if(bytes_readed <= 0){
                         return bytes_readed;
                     }
                     total_readed += bytes_readed;
@@ -79,6 +92,8 @@ ssize_t recv_request_packet(ALF_socket *client, char **dst_msg, size_t *msg_size
 }
 
 int main(int argc, char **argv){
+    signal(SIGINT, intHandler);
+
     printf("%s\n", argv[argc-argc]);
 
     ALF_socket *server = init_server(NULL, 8080);
@@ -88,7 +103,7 @@ int main(int argc, char **argv){
     }
 
     size_t msg_size = msgSize;
-    while(true){
+    while(shs_running){
         printf("Waiting connections...\n\n");
 
         ALF_socket *client = ALF_sockets_accept(server);
@@ -106,13 +121,11 @@ int main(int argc, char **argv){
             valid = parse_request_packet(client, msg);
         }
         free(msg);
-        printf("End. Message: %s\n", ALF_sockets_getLastErrorMsg());
-        printf("Connection ended.\n");
+        printf("Connection ended.\n\n");
         ALF_sockets_free(client);
     }
-    ALF_sockets_free(server);
-
     printf("Exiting...");
+    ALF_sockets_free(server);
 
     return 0;
 }
