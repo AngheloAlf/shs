@@ -7,7 +7,7 @@
 
 #include "util.h"
 
-#define msgSize 1024
+#define MSG_SIZE 1024
 
 typedef enum{
     GET, // The GET method requests a representation of the specified resource. Requests using GET should only retrieve data and should have no other effect. (This is also true of some other HTTP methods.)[1] The W3C has published guidance principles on this distinction, saying, "Web application design should be informed by the above principles, but also by the relevant limitations."[22] See safe methods below.

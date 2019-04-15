@@ -16,6 +16,7 @@ void intHandler(int _sig_){
 }
 
 ALF_socket *init_server(const char *ip_addr, uint16_t port){
+    printf("Starting server in port %u.\n", port);
     ALF_socket *server = ALF_sockets_init(ALF_SOCKETS_TYPE_TCP, ip_addr, port);
     if(server == NULL){
         return NULL;
@@ -91,24 +92,37 @@ ssize_t recv_request_packet(ALF_socket *client, char **dst_msg, size_t *msg_size
     return total_readed;
 }
 
+void chk_args(int argc, char **argv){
+    if(argc < 2){
+        printf("Usage: %s port\n", argv[0]);
+        exit(-1);
+    }
+}
+
 int main(int argc, char **argv){
+    chk_args(argc, argv);
+    unsigned int port_number;
+    if(sscanf(argv[1], "%u", &port_number) != 1){
+        fprintf(stderr, "Could't read port number.\n");
+        exit(-1);
+    }
     // signal(SIGINT, intHandler);
 
     printf("%s\n", argv[argc-argc]);
 
-    ALF_socket *server = init_server(NULL, 8080);
+    ALF_socket *server = init_server(NULL, port_number);
     if(server == NULL){
-        printf("%s\n", ALF_sockets_getLastErrorMsg());
+        fprintf(stderr, "%s\n", ALF_sockets_getLastErrorMsg());
         return ALF_sockets_getLastError();
     }
 
-    size_t msg_size = msgSize;
+    size_t msg_size = MSG_SIZE;
     while(shs_running){
         printf("Waiting connections...\n\n");
 
         ALF_socket *client = ALF_sockets_accept(server);
         if(client == NULL){
-            printf("%s\n", ALF_sockets_getLastErrorMsg());
+            fprintf(stderr, "%s\n", ALF_sockets_getLastErrorMsg());
             return ALF_sockets_getLastError();
         }
         printf("Client accepted.\n");

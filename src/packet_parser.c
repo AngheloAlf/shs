@@ -38,8 +38,8 @@ char *default_get_response(Request *req, unsigned long *response_size){
 }
 
 bool send_status_and_body(ALF_socket *client, long status_code, const char *status_msg, long body_size, const char *body){
-    char date[msgSize + 1];
-    getHttpDate(date, msgSize);
+    char date[MSG_SIZE + 1];
+    getHttpDate(date, MSG_SIZE);
     char *msg = malloc(sizeof(char) * (strlen(RESPONSE_PACKET) + 4 + strlen(status_msg) + strlen(date) + 22 + body_size + 1));
     sprintf(msg, RESPONSE_PACKET, status_code, status_msg, date, body_size, body);
     printf(">> %li %s\n", status_code, status_msg);
