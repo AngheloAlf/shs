@@ -6,42 +6,99 @@
 
 #include "util.h"
 
+#define RESPONSE_PACKET "HTTP/1.1 %li %s\r\nDate: %s\r\nServer: shs 1.0\r\nContent-Type: text/html;charset=UTF-8\r\nContent-Length: %li\r\n\r\n%s\r\n"
 
-
-bool send_response_packet(ALF_socket *client, Request *req){
-    ssize_t chars_send;
-    char date[msgSize + 1];
-    char msg[msgSize + 1];
-    char *res_header = "HTTP/1.1 200 OK\r\nDate: %s\r\nServer: shs 1.0\r\nContent-Type: text/html;charset=UTF-8\r\n";
-    getHttpDate(date, msgSize);
-
-    sprintf(msg, res_header, date);
-    chars_send = ALF_sockets_send(client, msg, 0, NULL);
-    if(chars_send < 0){
-        printf("%s\n", ALF_sockets_getLastErrorMsg());
-        return false;
-    }
-    
-    if(req->request->req_type == HEAD){
-        chars_send = ALF_sockets_send(client, "\r\n", 0, NULL);
-        if(chars_send < 0){
-            printf("%s\n", ALF_sockets_getLastErrorMsg());
-            return false;
-        }
-    }
-    else if(req->request->req_type == GET){
-        // Content-Length: %i\r\n\r\n%s\r\n", 13, "Hello, World!"
-        sprintf(msg, "Content-Length: %i\r\n\r\n%s\r\n", 13, "Hello, World!");
-        chars_send = ALF_sockets_send(client, msg, 0, NULL);
-        if(chars_send < 0){
-            printf("%s\n", ALF_sockets_getLastErrorMsg());
-            return false;
-        }
+char *default_get_response(Request *req, unsigned long *response_size){
+    FILE *html_file;
+    if(req->request->route[1] == 0){
+        html_file = fopen("index.html", "r");
     }
     else{
-        printf("how?\n");
+        html_file = fopen(&req->request->route[1], "r");
+    }
+
+    if(html_file == NULL){
+        return NULL;
+    }
+
+    fseek(html_file, 0L, SEEK_END);
+    *response_size = ftell(html_file);
+    fseek(html_file, 0L, SEEK_SET);
+
+    char *response = malloc(sizeof(char)*(*response_size));
+
+    if(fread(response, 1, *response_size, html_file) != *response_size){
+        free(response);
+        fclose(html_file);
+        return NULL;
+    }
+
+    fclose(html_file);
+    return response;
+}
+
+bool send_status_and_body(ALF_socket *client, long status_code, const char *status_msg, long body_size, const char *body){
+    char date[msgSize + 1];
+    getHttpDate(date, msgSize);
+    char *msg = malloc(sizeof(char) * (strlen(RESPONSE_PACKET) + 4 + strlen(status_msg) + strlen(date) + 22 + body_size + 1));
+    sprintf(msg, RESPONSE_PACKET, status_code, status_msg, date, body_size, body);
+    printf(">> %li %s\n", status_code, status_msg);
+    ssize_t chars_send = ALF_sockets_send(client, msg, 0, NULL);
+    free(msg);
+    if(chars_send < 0){
+        fprintf(stderr, "%s\n", ALF_sockets_getLastErrorMsg());
         return false;
     }
+    return true;
+}
+
+bool send_response_packet(ALF_socket *client, Request *req){
+    char *response = NULL;
+    unsigned long res_size;
+    switch(req->request->req_type){
+        case HEAD:
+            response = default_get_response(req, &res_size);
+            if(response != NULL && res_size > 0){
+                if(!send_status_and_body(client, 200, "OK", 0, "")){
+                    fprintf(stderr, "%s\n", ALF_sockets_getLastErrorMsg());
+                    free(response);
+                    return false;
+                }
+            }
+            else{
+                if(!send_status_and_body(client, 404, "Not Found", 0, "")){
+                    fprintf(stderr, "%s\n", ALF_sockets_getLastErrorMsg());
+                    free(response);
+                    return false;
+                }
+            }
+            break;
+        case GET:
+            response = default_get_response(req, &res_size);
+            if(response != NULL && res_size > 0){
+                if(!send_status_and_body(client, 200, "OK", res_size, response)){
+                    fprintf(stderr, "%s\n", ALF_sockets_getLastErrorMsg());
+                    free(response);
+                    return false;
+                }
+            }
+            else{
+                if(!send_status_and_body(client, 404, "Not Found", 0, "")){
+                    fprintf(stderr, "%s\n", ALF_sockets_getLastErrorMsg());
+                    free(response);
+                    return false;
+                }
+            }
+            break;
+        default:
+            fprintf(stderr, "how?\n");
+            if(!send_status_and_body(client, 500, "Internal Server Error", 0, "")){
+                fprintf(stderr, "%s\n", ALF_sockets_getLastErrorMsg());
+            }
+            free(response);
+            return false;
+    }
+    free(response);
     return true;
 }
 
@@ -91,10 +148,10 @@ bool parse_request_packet(ALF_socket *client, char *msg_packet){
     char **msg_arr = ALF_STR_split(msg_packet, "\r\n");
 
     ReqLine req_line;
-    printf("%s\n", msg_arr[0]);
+    printf("<< %s\n", msg_arr[0]);
     bool valid = parse_req_line(&req_line, msg_arr[0]);
     if(!valid){
-        printf("not valid\n");
+        fprintf(stderr, "not valid\n");
         ALF_STR_freeSplitted(msg_arr);
         return valid;
     }
@@ -110,8 +167,8 @@ bool parse_request_packet(ALF_socket *client, char *msg_packet){
         char **header_pair = ALF_STR_split(req_par, ": ");
         if(header_pair[0] == NULL || header_pair[1] == NULL){
             // Error ?
-            printf("Error\n");
-            printf("recv << %s\n", req_par);
+            fprintf(stderr, "Error\n");
+            fprintf(stderr, "recv << %s\n", req_par);
             continue;
         }
         if(strcicmp(header_pair[0], "Connection") == 0){
@@ -126,7 +183,6 @@ bool parse_request_packet(ALF_socket *client, char *msg_packet){
         ALF_STR_freeSplitted(header_pair);
         // printf("recv << %s\n", req_par);
     }
-    printf("\n");
 
     // printf("%s\n", msg_packet);
 
@@ -138,13 +194,13 @@ bool parse_request_packet(ALF_socket *client, char *msg_packet){
 
     free(req_line.route);
     for(StringDict_iter it=StringDict_begin(headers); !StringDict_iter_done(&it); StringDict_iter_next(&it)){
-        // printf("KEY '%llu' VAL '%c'\n",StringDict_iter_key(&it),StringDict_iter_val(&it));
         free(StringDict_iter_key(&it));
         free(StringDict_iter_val(&it));
     }
 
     StringDict_free(headers);
     ALF_STR_freeSplitted(msg_arr);
+    printf("\n");
     return valid;
 }
 

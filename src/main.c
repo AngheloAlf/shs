@@ -92,7 +92,7 @@ ssize_t recv_request_packet(ALF_socket *client, char **dst_msg, size_t *msg_size
 }
 
 int main(int argc, char **argv){
-    signal(SIGINT, intHandler);
+    // signal(SIGINT, intHandler);
 
     printf("%s\n", argv[argc-argc]);
 
@@ -116,7 +116,7 @@ int main(int argc, char **argv){
         char *msg = malloc(sizeof(char)*(msg_size+1));
         bool valid = true;
         ssize_t bytes_readed;
-        while((bytes_readed = recv_request_packet(client, &msg, &msg_size)) > 0 && valid){
+        while(valid && (bytes_readed = recv_request_packet(client, &msg, &msg_size)) > 0){
             // printf("recv<< %s\n", msg);
             valid = parse_request_packet(client, msg);
         }
