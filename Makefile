@@ -1,6 +1,6 @@
 DEBUG_FLAG := -g -Og
 OPTIMIZATE := -O2
-LIBS := -Iinclude -Llib -lALF_std
+LIBS := -Iinclude -Llib -lALF_std -lpthread
 # W_FLAGS := -Wall -Wextra -Wpedantic -Wshadow -Wfatal-errors
 W_FLAGS := -Wall -Wextra -Wpedantic -Wfatal-errors
 

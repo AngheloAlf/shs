@@ -6,6 +6,7 @@
 #include "ALF_std.h"
 
 #include "packet_parser.h"
+#include "SocketThread.h"
 #include "util.h"
 
 // https://stackoverflow.com/a/4217052/6292472
@@ -14,6 +15,7 @@ void intHandler(int _sig_){
     fprintf(stderr, "\nCatched signal %i\n", _sig_);
     shs_running = false;
 }
+
 
 ALF_socket *init_server(const char *ip_addr, uint16_t port){
     printf("Starting server in port %u.\n", port);
@@ -92,6 +94,26 @@ ssize_t recv_request_packet(ALF_socket *client, char **dst_msg, size_t *msg_size
     return total_readed;
 }
 
+void *handle_client(void *client_pointer){
+    size_t msg_size = MSG_SIZE;
+    SocketThread *client_thread = (SocketThread *)client_pointer;
+    ALF_socket *client = client_thread->socket_;
+
+    char *msg = malloc(sizeof(char)*(msg_size+1));
+    bool valid = true;
+    ssize_t bytes_readed;
+    while(valid && (bytes_readed = recv_request_packet(client, &msg, &msg_size)) > 0){
+        // printf("recv<< %s\n", msg);
+        valid = parse_request_packet(client, msg);
+    }
+    free(msg);
+    printf("Connection end.\n");
+    ALF_sockets_free(client);
+    client_thread->has_thread_end = true;
+
+    return NULL; //What should I return?
+}
+
 void chk_args(int argc, char **argv){
     if(argc < 2){
         printf("Usage: %s port\n", argv[0]);
@@ -108,37 +130,40 @@ int main(int argc, char **argv){
     }
     // signal(SIGINT, intHandler);
 
-    printf("%s\n", argv[argc-argc]);
-
     ALF_socket *server = init_server(NULL, port_number);
     if(server == NULL){
         fprintf(stderr, "%s\n", ALF_sockets_getLastErrorMsg());
         return ALF_sockets_getLastError();
     }
 
-    size_t msg_size = MSG_SIZE;
+    VectorSocketThread *clients_vector = VectorSocketThread_init(16);
+    printf("Waiting connections...\n\n");
     while(shs_running){
-        printf("Waiting connections...\n\n");
-
         ALF_socket *client = ALF_sockets_accept(server);
         if(client == NULL){
             fprintf(stderr, "%s\n", ALF_sockets_getLastErrorMsg());
+            printf("Exiting...");
+            ALF_sockets_free(server);
             return ALF_sockets_getLastError();
         }
         printf("Client accepted.\n");
 
-        char *msg = malloc(sizeof(char)*(msg_size+1));
-        bool valid = true;
-        ssize_t bytes_readed;
-        while(valid && (bytes_readed = recv_request_packet(client, &msg, &msg_size)) > 0){
-            // printf("recv<< %s\n", msg);
-            valid = parse_request_packet(client, msg);
+        SocketThread *client_thread = SocketThread_init(client);
+        if(pthread_create(client_thread->thread_id, NULL, handle_client, client_thread) != 0){
+            fprintf(stderr, "Error creating thread.\n");
+            ALF_sockets_free(client);
+            SocketThread_free(client_thread);
         }
-        free(msg);
-        printf("Connection ended.\n\n");
-        ALF_sockets_free(client);
+        VectorSocketThread_endadd(clients_vector, client_thread);
+
+        long still_alive = VectorSocketThread_remove_notrunning_threads(clients_vector);
+        printf("Still alive threads: %li\n\n", still_alive);
     }
     printf("Exiting...");
+
+    VectorSocketThread_clean(clients_vector);
+    VectorSocketThread_free(clients_vector);
+
     ALF_sockets_free(server);
 
     return 0;
